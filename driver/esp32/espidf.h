@@ -23,6 +23,20 @@
 #define _SOC_SPI_STRUCT_H_
 #define _SOC_RTC_CNTL_STRUCT_H_
 #define __XTENSA_API_H__
+#define _SOC_GPIO_STRUCT_H_
+#define _SOC_RTC_IO_STRUCT_H_
+#define _SOC_PCNT_STRUCT_H_
+#define _SYS_FCNTL_H_
+#define __SYS_ARCH_H__
+#define LIST_H
+#define INC_TASK_H
+#define LWIP_HDR_NETIF_H
+#define ESP_EVENT_H_
+#define __SNTP_H__
+
+typedef int	BaseType_t;
+typedef unsigned int	UBaseType_t;
+typedef void* system_event_t;
 
 // Exclude SOC just because it contains large structs that don't interest the user
 #define _SOC_SPI_PERIPH_H_
@@ -39,16 +53,33 @@ typedef uint32_t TickType_t;
 // Micropython specific types
 typedef void *mp_obj_t;
 
+static inline void SPH0645_WORKAROUND(int i2s_num);
 static inline void get_ccount(int *ccount);
 
 #else // PYCPARSER
 
+/////////////////////////////////////////////////////////////////////////////////////////////
+// A workaround for SPH0645 I2S, see:
+// - https://hackaday.io/project/162059-street-sense/log/160705-new-i2s-microphone/discussion-124677
+// - https://www.esp32.com/viewtopic.php?t=4997#p45366
+// Since reg access is based on macros, this cannot currently be directly implemented in Micropython
+
+#include "soc/i2s_reg.h" // for SPH0645_WORKAROUND
+
+static inline void SPH0645_WORKAROUND(int i2s_num)
+{
+    REG_SET_BIT( I2S_TIMING_REG(i2s_num), BIT(9));
+    REG_SET_BIT( I2S_CONF_REG(i2s_num), I2S_RX_MSB_SHIFT);
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////
 // Helper function to measure CPU cycles
 //
 static inline void get_ccount(int *ccount)
 {
 	asm volatile("rsr.ccount %0" : "=a"(*ccount));
 }
+
 
 #endif //PYCPARSER
 
@@ -68,6 +99,19 @@ static inline void get_ccount(int *ccount)
 #include "driver/adc.h"
 #include "driver/i2s.h"
 #include "driver/pcnt.h"
+#include "mdns.h"
+#include "esp_http_client.h"
+#include "sh2lib.h"
+
+/////////////////////////////////////////////////////////////////////////////////////////////
+// Helper function to register HTTP event handler
+// Needed to fulfill gen_mpy.py callback conventions
+//
+static inline void esp_http_client_register_event_handler(esp_http_client_config_t *config, http_event_handle_cb http_event_handler, void *user_data)
+{
+    config->event_handler = http_event_handler;
+    config->user_data = user_data;
+}
 
 // We don't want the whole FreeRTOS, only selected functions
 
@@ -97,8 +141,8 @@ void *spi_transaction_set_cb(mp_obj_t pre_cb, mp_obj_t post_cb);
 
 // These functions can be set into pre_cb/post_cb of spi_device_interface_config_t
 
-void spi_pre_cb_isr(spi_transaction_t *trans);
-void spi_post_cb_isr(spi_transaction_t *trans);
+void ex_spi_pre_cb_isr(spi_transaction_t *trans);
+void ex_spi_post_cb_isr(spi_transaction_t *trans);
 
 // Useful constants
 
@@ -128,6 +172,7 @@ enum {
     ENUM_SPI_DEVICE_3WIRE = SPI_DEVICE_3WIRE,
     ENUM_SPI_DEVICE_POSITIVE_CS = SPI_DEVICE_POSITIVE_CS,
     ENUM_SPI_DEVICE_HALFDUPLEX = SPI_DEVICE_HALFDUPLEX,
+    ENUM_SPI_DEVICE_NO_DUMMY = SPI_DEVICE_NO_DUMMY,
     ENUM_SPI_DEVICE_CLK_AS_CS = SPI_DEVICE_CLK_AS_CS,
 };
 
@@ -148,13 +193,14 @@ enum {
 };
 
 /////////////////////////////////////////////////////////////////////////////////////////////
-// ili9341 flush and ISR in C
+// ili9xxx flush and ISR in C
 //
 // disp_drv->user_data should be a dict that contains dc and spi, setup by micropython.
-// like this: "self.disp_drv.user_data = {'dc': self.dc, 'spi': self.spi}"
+// like this: "self.disp_drv.user_data = {'dc': self.dc, 'spi': self.spi, 'dt': display_type}"
 
 
-void ili9341_post_cb_isr(spi_transaction_t *trans);
-void ili9341_flush(void *disp_drv, const void *area, void *color_p);
+void ili9xxx_post_cb_isr(spi_transaction_t *trans);
+
+void ili9xxx_flush(void *disp_drv, const void *area, void *color_p);
 
 

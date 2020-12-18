@@ -1,4 +1,10 @@
 #include "../include/common.h"
+#ifndef _POSIX_C_SOURCE
+#define _POSIX_C_SOURCE 200809L
+#endif
+#include <errno.h>
+#include <signal.h>
+#include <pthread.h>
 #include "SDL_monitor.h"
 #include "SDL_mouse.h"
 #ifdef __EMSCRIPTEN__
@@ -8,13 +14,21 @@
 /* Defines the LittlevGL tick rate in milliseconds. */
 /* Increasing this value might help with CPU usage at the cost of lower
  * responsiveness. */
-#define LV_TICK_RATE 50
+#define LV_TICK_RATE 20
 
 //////////////////////////////////////////////////////////////////////////////
 
+STATIC pthread_t mp_thread;
+
+STATIC mp_obj_t mp_refresh_SDL()
+{
+    if (monitor_active()) monitor_sdl_refr_core();
+    return mp_const_none;
+}
+
 STATIC mp_obj_t mp_lv_task_handler(mp_obj_t arg)
 {  
-    if (monitor_active()) monitor_sdl_refr_core();
+    mp_refresh_SDL();
     lv_task_handler();
     return mp_const_none;
 }
@@ -27,9 +41,10 @@ STATIC int tick_thread(void * data)
     (void)data;
 
     while(monitor_active()) {
-        SDL_Delay(1);   /*Sleep for 1 millisecond*/
-        lv_tick_inc(1); /*Tell LittelvGL that 1 milliseconds were elapsed*/
+        SDL_Delay(LV_TICK_RATE);   /*Sleep for LV_TICK_RATE millisecond*/
+        lv_tick_inc(LV_TICK_RATE); /*Tell LittelvGL that LV_TICK_RATE milliseconds were elapsed*/
         mp_sched_schedule((mp_obj_t)&mp_lv_task_handler_obj, mp_const_none);
+        pthread_kill(mp_thread, SIGUSR1); // interrupt REPL blocking input. See handle_sigusr1
     }
 
     return 0;
@@ -42,12 +57,21 @@ STATIC void mp_lv_main_loop(void)
 }
 #endif
 
+static void handle_sigusr1(int signo)
+{
+    // Let the signal pass. blocking function would return E_INTR.
+    // This would cause a call to "mp_handle_pending" even when 
+    // waiting for user input.
+    // See https://github.com/micropython/micropython/pull/5723
+}
+
 STATIC mp_obj_t mp_init_SDL(size_t n_args, const mp_obj_t *pos_args, mp_map_t *kw_args)
 {
-    enum { ARG_w, ARG_h };
+    enum { ARG_w, ARG_h, ARG_auto_refresh };
     static const mp_arg_t allowed_args[] = {
         { MP_QSTR_w, MP_ARG_KW_ONLY | MP_ARG_INT, {.u_int = LV_HOR_RES_MAX} },
         { MP_QSTR_h, MP_ARG_KW_ONLY | MP_ARG_INT, {.u_int = LV_VER_RES_MAX} },
+        { MP_QSTR_auto_refresh, MP_ARG_KW_ONLY | MP_ARG_BOOL, {.u_bool = true} },
     };
 
     // parse args
@@ -61,8 +85,23 @@ STATIC mp_obj_t mp_init_SDL(size_t n_args, const mp_obj_t *pos_args, mp_map_t *k
     SDL_EventState(SDL_KEYDOWN, SDL_DISABLE);
     SDL_EventState(SDL_KEYUP, SDL_DISABLE);
 #else
-    SDL_CreateThread(tick_thread, "tick", NULL);
+    if (args[ARG_auto_refresh].u_bool) {
+        SDL_CreateThread(tick_thread, "tick", NULL);
+    }
 #endif
+
+    if (args[ARG_auto_refresh].u_bool) {
+        mp_thread = pthread_self();
+        struct sigaction sa;
+        sa.sa_handler = handle_sigusr1;
+        sa.sa_flags = 0;
+        sigemptyset(&sa.sa_mask);
+        if (sigaction(SIGUSR1, &sa, NULL) == -1) {
+            perror("sigaction");
+            exit(1);
+        }
+    }
+
     return mp_const_none;
 }
 
@@ -74,6 +113,7 @@ STATIC mp_obj_t mp_deinit_SDL()
 
 STATIC MP_DEFINE_CONST_FUN_OBJ_KW(mp_init_SDL_obj, 0, mp_init_SDL);
 STATIC MP_DEFINE_CONST_FUN_OBJ_0(mp_deinit_SDL_obj, mp_deinit_SDL);
+STATIC MP_DEFINE_CONST_FUN_OBJ_0(mp_refresh_SDL_obj, mp_refresh_SDL);
 
 DEFINE_PTR_OBJ(monitor_flush);
 DEFINE_PTR_OBJ(mouse_read);
@@ -82,6 +122,7 @@ STATIC const mp_rom_map_elem_t SDL_globals_table[] = {
         { MP_ROM_QSTR(MP_QSTR___name__), MP_ROM_QSTR(MP_QSTR_SDL) },
         { MP_ROM_QSTR(MP_QSTR_init), MP_ROM_PTR(&mp_init_SDL_obj) },
         { MP_ROM_QSTR(MP_QSTR_deinit), MP_ROM_PTR(&mp_deinit_SDL_obj) },
+        { MP_ROM_QSTR(MP_QSTR_refresh), MP_ROM_PTR(&mp_refresh_SDL_obj) },
         { MP_ROM_QSTR(MP_QSTR_monitor_flush), MP_ROM_PTR(&PTR_OBJ(monitor_flush))},
         { MP_ROM_QSTR(MP_QSTR_mouse_read), MP_ROM_PTR(&PTR_OBJ(mouse_read))},
 };

@@ -1,3 +1,4 @@
+![Build lv_micropython unix port](https://github.com/lvgl/lv_binding_micropython/workflows/Build%20lv_micropython%20unix%20port/badge.svg)
 
 # Bindings for LittelvGL
 
@@ -121,22 +122,22 @@ SDL.init()
 
 disp_buf1 = lv.disp_buf_t()
 buf1_1 = bytes(480*10)
-lv.disp_buf_init(disp_buf1,buf1_1, None, len(buf1_1)//4)
+disp_buf1.init(buf1_1, None, len(buf1_1)//4)
 disp_drv = lv.disp_drv_t()
-lv.disp_drv_init(disp_drv)
+disp_drv.init()
 disp_drv.buffer = disp_buf1
 disp_drv.flush_cb = SDL.monitor_flush
 disp_drv.hor_res = 480
 disp_drv.ver_res = 320
-lv.disp_drv_register(disp_drv)
+disp_drv.register()
 
 # Regsiter SDL mouse driver
 
 indev_drv = lv.indev_drv_t()
-lv.indev_drv_init(indev_drv) 
+indev_drv.init() 
 indev_drv.type = lv.INDEV_TYPE.POINTER
 indev_drv.read_cb = SDL.mouse_read
-lv.indev_drv_register(indev_drv)
+indev_drv.register()
 ```
 
 In this example we import SDL. SDL module gives access to display and input device on a unix/linux machine. It contains several objects such as `SDL.monitor_flush`, which are wrappers around function pointers and can be registerd as LittlevGL display and input driver.  
@@ -168,6 +169,7 @@ Here is a procedure for adding lvgl to an existing Micropython project. (The exa
 - Register lvgl module and display/input drivers in Micropython as a builtin module. [An example](https://github.com/littlevgl/lv_micropython/blob/2940838bf6d4999050efecb29a4152ab5796d5b3/ports/unix/mpconfigport.h#L230).
 - Add lvgl roots to gc roots. [An example](https://github.com/littlevgl/lv_micropython/blob/2940838bf6d4999050efecb29a4152ab5796d5b3/ports/unix/mpconfigport.h#L317-L318). 
 - ~Configure lvgl to use *Garbage Collection* by setting several `LV_MEM_CUSTOM_*` and `LV_GC_*` macros [example](https://github.com/littlevgl/lv_mpy/blob/bc635700e4186f39763e5edee73660fbe1a27cd4/lib/lv_conf.h#L28)~ lv_conf.h was moved to lv_binding_micropython git module.
+- Make sure you configure partitions correctly in `partitions.csv` and leave enough room for the LVGL module.
 - Something I forgot? Please let me know.
 
 ### gen_mpy.py syntax
@@ -228,22 +230,22 @@ SDL.init()
 
 disp_buf1 = lv.disp_buf_t()
 buf1_1 = bytes(480*10)
-lv.disp_buf_init(disp_buf1,buf1_1, None, len(buf1_1)//4)
+disp_buf1.init(buf1_1, None, len(buf1_1)//4)
 disp_drv = lv.disp_drv_t()
-lv.disp_drv_init(disp_drv)
+disp_drv.init()
 disp_drv.buffer = disp_buf1
 disp_drv.flush_cb = SDL.monitor_flush
 disp_drv.hor_res = 480
 disp_drv.ver_res = 320
-lv.disp_drv_register(disp_drv)
+disp_drv.register()
 
-# Regsiter SDL mouse driver
+# Register SDL mouse driver
 
 indev_drv = lv.indev_drv_t()
-lv.indev_drv_init(indev_drv) 
+indev_drv.init() 
 indev_drv.type = lv.INDEV_TYPE.POINTER
 indev_drv.read_cb = SDL.mouse_read
-lv.indev_drv_register(indev_drv)
+indev_drv.register()
 ```
 In this example, SDL display and input drivers are registered on a unix port of Micropython.
 
@@ -255,7 +257,7 @@ import lvesp32
 
 # Import ILI9341 driver and initialized it
 
-from ili9341 import ili9341
+from ili9XXX import ili9341
 disp = ili9341()
 
 # Import XPT2046 driver and initalize it
